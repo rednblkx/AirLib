@@ -1,8 +1,8 @@
 #include "APSession.hpp"
-#include "PairingUtils.h"
+#include "PairingUtils.hpp"
 #include "RTSPMessage.hpp"
 #include "cp_conf.hpp"
-#include "dnssd/dnssd.h"
+#include "dnssd/dnssd.hpp"
 #include "server.hpp"
 #include <array>
 #include <boost/asio/ip/address.hpp>
@@ -29,6 +29,8 @@ public:
   std::array<uint8_t, 6> getDeviceID() { return deviceID; }
   void startServers();
   void stopServers();
+  void startBonjour();
+  void stopBonjour();
   void setSessionDelegate(Session::APSessionDelegate* delegate);
   void setInitialCPModes(CPModes modes){initialCPmodes = modes;};
   CPModes getInitialCPModes(){return initialCPmodes;};
@@ -46,12 +48,12 @@ private:
   DisplayDescriptor display;
   CPModes initialCPmodes;
   std::array<uint8_t, 6> deviceID;
-  AirDNS *airDNS;
+  std::unique_ptr<AirDNS> airDNS;
   boost::asio::ip::address address;
   unsigned short port;
   boost::asio::io_context ioc;
-  boost::asio::io_context log_ioc;
-  std::thread log_thread;
+//  boost::asio::io_context log_ioc;
+//  std::thread log_thread;
   std::unique_ptr<PairingSession> pairingSetupSession;
   std::unique_ptr<PairingSession> pairingVerifySession;
   std::shared_ptr<RTSPServer> server;

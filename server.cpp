@@ -15,6 +15,7 @@ void RTSPConnection::close_connection(
     socket_.close(ignored_ec);
     LOG_INFO("Connection closed: {}", reason_ec.message());
     delegate_.handleConnectionClosed(shared_from_this(), reason_ec);
+    this->shared_from_this().reset();
     // Ensure no more operations are started by changing state
     state_ = State::Idle;
   }

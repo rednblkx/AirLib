@@ -233,12 +233,12 @@ private:
 // --- Global Initialization ---
 inline void initialize_srp_library() {
     // Initialize OpenSSL library functions
-    OpenSSL_add_all_algorithms(); // Deprecated in OpenSSL 3.0, but often needed for < 3.0 compatibility
-    ERR_load_crypto_strings();
+//    OpenSSL_add_all_algorithms(); // Deprecated in OpenSSL 3.0, but often needed for < 3.0 compatibility
+//    ERR_load_crypto_strings();
     LOG_DEBUG("SRP Library Initialized (OpenSSL).");
 }
 
 // Should be called once at application end
 inline void finalize_srp_library() {
-    LOG_DEBUG("SRP Library Finalized (OpenSSL cleanup may be partial).");
+    LOG_DEBUG("SRP Library Finalized");
 }

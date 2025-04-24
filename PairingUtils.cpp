@@ -1,4 +1,4 @@
-#include "PairingUtils.h"
+#include "PairingUtils.hpp"
 #include "sodium/crypto_aead_chacha20poly1305.h"
 #include "sodium/crypto_scalarmult_curve25519.h"
 #include <cstddef>

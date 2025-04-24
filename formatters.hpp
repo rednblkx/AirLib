@@ -9,6 +9,7 @@
 #include <string>      // For std::string
 #include <vector>      // For std::vector
 #include <algorithm>   // For std::min
+#include <span>   // For std::span
 
 #include "external/plistcpp/Plist.hpp"
 

@@ -175,7 +175,7 @@ void MFiSAP::createSignature(std::vector<uint8_t> &data, std::vector<uint8_t> &s
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *)&chunk);
 
     /* get verbose debug output please */
-    // curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
+    curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
 
     curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, (long)wt.sizeleft);
 

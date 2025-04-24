@@ -11,7 +11,9 @@
 #include <string>
 #include <string_view>
 #include <utility>
-
+#ifdef ANDROID
+#include <android/log.h>
+#endif
 // Boost.Asio includes (only needed if initialized)
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/strand.hpp>
@@ -131,7 +133,11 @@ class Logger {
     // Logs a pre-formatted string synchronously using the mutex
     void logSyncRaw(const std::string& output) {
         std::lock_guard<std::mutex> lock(m_output_mutex);
+    #ifdef ANDROID
+        __android_log_print(ANDROID_LOG_DEBUG, "APServer", "%s", output.c_str());
+    #else
         std::cout << output << std::endl;
+    #endif
     }
 
     // Formats and logs synchronously

@@ -1,11 +1,11 @@
 #pragma once
-#include <avahi-common/simple-watch.h>
-#include <bitset>
+#ifdef LINUX
 #include <dns_sd.h>
+#endif
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
-#include <pthread.h>
+#include <thread>
 #include <string>
 #include <array>
 #include <vector>
@@ -73,15 +73,20 @@ struct AirFeatures2 {
 class AirDNS {
     private:
         std::string name;
-        std::array<uint8_t, 6> deviceId;
+        std::array<uint8_t, 6> deviceId{};
         uint16_t servicePort;
         struct AirFeatures1 features1;
         struct AirFeatures2 features2;
-        DNSServiceRef dnsRegPtr;
-        pthread_t browse_thread;
+    #if LINUX
+       DNSServiceRef RegisterRef = nullptr;
+    #endif
+        std::thread browse_thread;
+        std::thread daemonLoop;
     public:
         // Service name, device ID (e.g. MAC Address) and service port
+        ~AirDNS();
         AirDNS(std::string name, uint8_t deviceId[6], uint16_t port, struct AirFeatures1 features1, struct AirFeatures2 features2);
-        DNSServiceErrorType registerAP(std::string identifier, std::vector<uint8_t> pk);
+        int registerAP(const std::string& identifier, std::vector<uint8_t> pk);
         void startBrowse();
+        void stop();
 };

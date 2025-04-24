@@ -2,9 +2,9 @@
 #include "APSession.hpp"
 #include "APUtils.hpp"
 #include "MFiSAP.hpp"
-#include "PairingUtils.h"
+#include "PairingUtils.hpp"
 #include "RTSPMessage.hpp"
-#include "dnssd.h"
+#include "dnssd.hpp"
 #include "logger.hpp"
 #include <boost/endian/conversion.hpp>
 #include <cstddef>
@@ -44,6 +44,7 @@ APServer::APServer(std::string name, boost::asio::ip::address address, uint16_t 
 }
 
 APServer::~APServer() {
+    stopServers();
   // Stop the server
   // log_ioc.stop();
   // log_thread.join();
@@ -63,35 +64,7 @@ void APServer::finalizeServer(RTSPServer *server) {
   LOG_INFO("Finalizing server");
 }
 void APServer::startServers() {
-  PairingDelegate d;
-  const char *configPath = std::getenv("CONFIG_FOLDER_PATH");
-  PairingSession s(d, PairingSession::SessionType::SetupServer, configPath ? configPath : "");
-  AirFeatures1 features1 {.bytes = 
-    AirFeatures1::Photo |
-    AirFeatures1::Slideshow |
-    AirFeatures1::Unknown1 |
-    AirFeatures1::Screen |
-    AirFeatures1::Audio | 
-    AirFeatures1::Unknown2 | 
-    AirFeatures1::AudioRedundant | 
-    AirFeatures1::PhotoCaching | 
-    AirFeatures1::MetadataFeatureText | 
-    AirFeatures1::MetadataFeatureArtwork | 
-    AirFeatures1::MetadataFeatureProgress | 
-    AirFeatures1::AudioAAC_LC | 
-    AirFeatures1::Unknown3 | 
-    AirFeatures1::Unknown4 | 
-    AirFeatures1::AudioAES_128_SAPv1 | 
-    AirFeatures1::UnifiedServices 
-  };
-  AirFeatures2 features2;
-  if(carplayEnabled){
-    features2.bytes = AirFeatures2::isCarplay | AirFeatures2::carPlayControl | AirFeatures2::CoreUtilsPairingAndEncryption;
-  } else {
-    features2.bytes = AirFeatures2::CoreUtilsPairingAndEncryption | AirFeatures2::hkPairingAndAccessControl;
-  }
-  airDNS = new AirDNS(accName, deviceID.data(), port, features1, features2);
-  airDNS->registerAP(s.loadIdentity()->identifier, s.loadIdentity()->publicKey);
+    startBonjour();
   if(carplayEnabled)
     airDNS->startBrowse();
   server->run();
@@ -99,12 +72,52 @@ void APServer::startServers() {
 }
 
 void APServer::stopServers() {
-  // Stop the server
-  for (auto &session : sessions) {
-    session.second->stop();
-  }
-  server->stop();
-  ioc.stop();
+    stopBonjour();
+    // Stop the server
+    for (auto &session : sessions) {
+      session.second->stop();
+      sessions.erase(session.first);
+    }
+    LOG_INFO("Sessions count: {}", sessions.size());
+    server->stop();
+    ioc.stop();
+}
+
+void APServer::startBonjour() {
+    PairingDelegate d;
+    const char *configPath = std::getenv("CONFIG_FOLDER_PATH");
+    PairingSession s(d, PairingSession::SessionType::SetupServer, configPath ? configPath : "");
+    AirFeatures1 features1 {.bytes =
+    AirFeatures1::Photo |
+    AirFeatures1::Slideshow |
+    AirFeatures1::Unknown1 |
+    AirFeatures1::Screen |
+    AirFeatures1::Audio |
+    AirFeatures1::Unknown2 |
+    AirFeatures1::AudioRedundant |
+    AirFeatures1::PhotoCaching |
+    AirFeatures1::MetadataFeatureText |
+    AirFeatures1::MetadataFeatureArtwork |
+    AirFeatures1::MetadataFeatureProgress |
+    AirFeatures1::AudioAAC_LC |
+    AirFeatures1::Unknown3 |
+    AirFeatures1::Unknown4 |
+    AirFeatures1::AudioAES_128_SAPv1 |
+    AirFeatures1::UnifiedServices
+    };
+    AirFeatures2 features2;
+    if(carplayEnabled){
+        features2.bytes = AirFeatures2::isCarplay | AirFeatures2::carPlayControl | AirFeatures2::CoreUtilsPairingAndEncryption;
+    } else {
+        features2.bytes = AirFeatures2::CoreUtilsPairingAndEncryption | AirFeatures2::hkPairingAndAccessControl;
+    }
+    airDNS = std::make_unique<AirDNS>(accName, deviceID.data(), port, features1, features2);
+    airDNS->registerAP(s.loadIdentity()->identifier, s.loadIdentity()->publicKey);
+}
+
+void APServer::stopBonjour(){
+    airDNS->stop();
+    airDNS = nullptr;
 }
 
 std::vector<char>
@@ -291,6 +304,9 @@ void APServer::handleConnectionClosed(std::shared_ptr<RTSPConnection> connection
           sessions.erase(session->getSessionID());
         }
         session.reset();
+        pairingVerified = false;
+        setupOccurred = false;
+        pairingVerifySession = nullptr;
       }
     } catch (const std::exception& e) {
       LOG_ERROR("Error casting connection context to APSession*: {}", e.what());
@@ -776,7 +792,7 @@ void APServer::handleTeardown(const RTSPMessage &request, RTSPMessage &response,
       sessions[sessionID]->processTeardown(requestPlist, responsePlist);
     } else {
       sessions[sessionID]->stop();
-      sessions[sessionID].reset();
+      sessions.erase(sessionID);
     }
     // std::vector<char> responsePayload;
     // Plist::writePlistBinary(responsePayload, responsePlist);

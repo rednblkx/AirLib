@@ -2,66 +2,41 @@
 #include <algorithm>
 #include <cstring>
 #include <ifaddrs.h>
-#include <memory>
-#include <net/if.h>
+#include <linux/if.h>
+#include <linux/if_packet.h>
 #include <netinet/in.h>
 #include <openssl/evp.h>
 #include <openssl/sha.h>
-#include <stdexcept>
 #include <sys/ioctl.h>
 #include <unistd.h>
-#include <vector>
 
 namespace AirPlay {
 namespace Utils {
 
-std::array<uint8_t, 6> getPrimaryMacAddress() {
-  struct ifaddrs *ifaddr, *ifa;
-  std::vector<std::string> possibleInterfaces;
+std::array<uint8_t , 6>	getPrimaryMacAddress() {
+    std::array<uint8_t, 6> macOut{};
+    struct ifaddrs *			iaList;
+    const struct ifaddrs *		ia;
 
-  if (getifaddrs(&ifaddr) == -1) {
-    throw std::runtime_error("getifaddrs failed");
-  }
+    iaList = NULL;
+    getifaddrs( &iaList );
 
-  for (ifa = ifaddr; ifa != NULL; ifa = ifa->ifa_next) {
-    if (ifa->ifa_addr != NULL &&
-        ifa->ifa_addr->sa_family == AF_INET) { // Consider only IPv4 interfaces
-      possibleInterfaces.push_back(ifa->ifa_name);
+    for( ia = iaList; ia; ia = ia->ifa_next )
+    {
+        const struct sockaddr_ll *		sll;
+
+        if( !( ia->ifa_flags & IFF_UP ) )			continue; // Skip inactive.
+        if( ia->ifa_flags & IFF_LOOPBACK )			continue; // Skip loopback.
+        if( !ia->ifa_addr )							continue; // Skip no addr.
+        if( ia->ifa_addr->sa_family != AF_PACKET )	continue; // Skip non-AF_PACKET.
+        sll = (const struct sockaddr_ll *) ia->ifa_addr;
+        if( sll->sll_halen != 6 )					continue; // Skip wrong length.
+
+        std::copy(sll->sll_addr, sll->sll_addr + 6, macOut.data());
+        break;
     }
-  }
-
-  freeifaddrs(ifaddr);
-
-  // Remove duplicate interface names (e.g., eth0 and eth0:1)
-  std::sort(possibleInterfaces.begin(), possibleInterfaces.end());
-  possibleInterfaces.erase(
-      std::unique(possibleInterfaces.begin(), possibleInterfaces.end()),
-      possibleInterfaces.end());
-
-  int sock = socket(AF_INET, SOCK_DGRAM, 0);
-  if (sock < 0) {
-    throw std::runtime_error("Failed to create socket");
-  }
-
-  for (const auto &ifname : possibleInterfaces) {
-    struct ifreq ifr;
-    ifr.ifr_addr.sa_family = AF_INET;
-    strncpy(ifr.ifr_name, ifname.c_str(), IFNAMSIZ - 1);
-
-    if (ioctl(sock, SIOCGIFHWADDR, &ifr) == 0) {
-      close(sock);
-      return std::array<uint8_t, 6>{
-          static_cast<uint8_t>(ifr.ifr_hwaddr.sa_data[0]),
-          static_cast<uint8_t>(ifr.ifr_hwaddr.sa_data[1]),
-          static_cast<uint8_t>(ifr.ifr_hwaddr.sa_data[2]),
-          static_cast<uint8_t>(ifr.ifr_hwaddr.sa_data[3]),
-          static_cast<uint8_t>(ifr.ifr_hwaddr.sa_data[4]),
-          static_cast<uint8_t>(ifr.ifr_hwaddr.sa_data[5])};
-    }
-  }
-
-  close(sock);
-  throw std::runtime_error("Failed to get MAC address for any interface");
+    if( iaList ) freeifaddrs( iaList );
+    return macOut;
 }
 } // namespace Utils
 } // namespace AirPlay

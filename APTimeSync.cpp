@@ -5,6 +5,7 @@
 #include <boost/asio/placeholders.hpp>
 #include <boost/bind/bind.hpp> // For boost::bind
 #include "logger.hpp"
+#include <boost/multiprecision/cpp_int.hpp>
 
 namespace AirPlay {
 namespace Session {
@@ -159,7 +160,7 @@ uint64_t APTimeSync::ticksToNanos(Ticks ticks) const {
     uint64_t remainder_ticks = ticks % frequency_;
     uint64_t ns = secs * 1000000000ULL;
     // Careful about overflow with remainder_ticks * 1e9
-    uint64_t frac_ns = (static_cast<unsigned __int128>(remainder_ticks) * 1000000000ULL) / frequency_;
+    uint64_t frac_ns = ((static_cast<boost::multiprecision::uint128_t>(remainder_ticks) * 1000000000ULL) / frequency_).convert_to<uint64_t>();
     return ns + frac_ns;
 
 }
@@ -175,7 +176,7 @@ APTimeSync::nanosToTicks(uint64_t nanos) const {
      uint64_t remainder_ns = nanos % 1000000000ULL;
      Ticks ticks = secs * frequency_;
      // Careful about overflow with remainder_ns * frequency
-     Ticks frac_ticks = (static_cast<unsigned __int128>(remainder_ns) * frequency_) / 1000000000ULL;
+     Ticks frac_ticks = ((static_cast<boost::multiprecision::uint128_t>(remainder_ns) * frequency_) / 1000000000ULL).convert_to<uint64_t>();
      return ticks + frac_ticks;
 }
 
@@ -189,7 +190,7 @@ uint64_t APTimeSync::ntpToTicks(uint64_t ntpDiff) const {
     uint64_t ntpFrac = ntpDiff & 0xFFFFFFFFULL;
     uint64_t nanos = ntpSecs * 1000000000ULL;
     // frac_ns = (ntpFrac * 1e9) / 2^32
-    uint64_t frac_ns = (static_cast<unsigned __int128>(ntpFrac) * 1000000000ULL) >> 32;
+    uint64_t frac_ns = ((static_cast<boost::multiprecision::uint128_t>(ntpFrac) * 1000000000ULL) >> 32).convert_to<uint64_t>();
     return nanosToTicks(nanos + frac_ns);
 }
 
@@ -313,7 +314,7 @@ void APTimeSync::clockTick() {
 
         if (adjusted_freq > 0) {
              // Calculate the new scale factor for the *next* interval
-             scale_ = static_cast<uint64_t>(std::numeric_limits<uint64_t>::max() / adjusted_freq);
+             scale_ = static_cast<uint64_t>(std::numeric_limits<uint64_t>::max() / static_cast<uint64_t>(adjusted_freq));
              // std::cout << "[Sync] Recalculated scale factor for adjusted freq: " << adjusted_freq << " Hz, scale: " << scale_ << std::endl; // Verbose
         } else {
              LOG_WARN("Warning: Adjusted frequency is zero or negative, using nominal scale.");
@@ -338,7 +339,7 @@ bool APTimeSync::adjustClock(int64_t offsetNanoseconds,
         offsetTime.secs = static_cast<int32_t>(absOffset / 1000000000ULL);
         // Convert remainder ns to 1/2^64 fraction: (rem_ns * 2^64) / 1e9
         uint64_t rem_ns = absOffset % 1000000000ULL;
-        unsigned __int128 frac128 = static_cast<unsigned __int128>(rem_ns) << 64;
+        boost::multiprecision::uint128_t frac128 = static_cast<boost::multiprecision::uint128_t>(rem_ns) << 64;
         offsetTime.frac = static_cast<uint64_t>(frac128 / 1000000000ULL);
 
 
@@ -450,7 +451,7 @@ APTimeSync::getSynchronizedTimeNearTicks(Ticks targetTicks) {
     deltaTime.secs = static_cast<int32_t>(deltaTicksAbs / frequency_); // Integer seconds
     // Fractional part: (deltaTicksAbs % frequency_) * scale_
     Ticks remTicks = deltaTicksAbs % frequency_;
-    unsigned __int128 frac128 = static_cast<unsigned __int128>(remTicks) << 64;
+    boost::multiprecision::uint128_t frac128 = static_cast<boost::multiprecision::uint128_t>(remTicks) << 64;
     deltaTime.frac = static_cast<uint64_t>(frac128 / frequency_);
 
 

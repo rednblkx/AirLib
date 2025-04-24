@@ -2,7 +2,7 @@
 #include "APAudioStream.hpp"
 #include "APSessionScreen.hpp"
 #include "APTimeSync.hpp"
-#include "PairingUtils.h"
+#include "PairingUtils.hpp"
 #include "eventConnection.hpp"
 #include "keepAliveManager.hpp"
 #include <boost/asio.hpp>

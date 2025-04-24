@@ -1,3 +1,4 @@
+#ifdef LINUX
 #include <avahi-client/lookup.h>
 #include <avahi-common/error.h>
 #include <avahi-common/malloc.h>
@@ -60,9 +61,10 @@ static void resolve_callback(
             CURL * curl;
             CURLcode res;
             LOG_INFO("Sending connection request: {}", name);
+            LOG_DEBUG("hostname: {} port: {}", host_name, port);
             curl = curl_easy_init();
             std::string url = "http://";
-            url.append(host_name);
+            url.append(a);
             url.append(":");
             url.append(std::to_string(port));
             url.append("/ctrl-int/1/connect");
@@ -133,9 +135,8 @@ static void client_callback(AvahiClient *c, AvahiClientState state, AVAHI_GCC_UN
     }
 }
 
-static void* dns_browse_thread(void* arg) {
+void dns_browse_thread(std::array<uint8_t, 6>& deviceId) {
     curl_global_init(CURL_GLOBAL_NOTHING);
-    std::array<uint8_t, 6> *deviceId = ( std::array<uint8_t, 6> *)arg;
 	AvahiClient *client = NULL;
 	AvahiServiceBrowser *sb = NULL;
     int error;
@@ -153,7 +154,7 @@ static void* dns_browse_thread(void* arg) {
         goto fail;
     }
     /* Create the service browser */
-    if (!(sb = avahi_service_browser_new(client, AVAHI_IF_UNSPEC, AVAHI_PROTO_INET6, "_carplay-ctrl._tcp", NULL, AVAHI_LOOKUP_USE_MULTICAST, browse_callback, deviceId))) {
+    if (!(sb = avahi_service_browser_new(client, AVAHI_IF_UNSPEC, AVAHI_PROTO_INET6, "_carplay-ctrl._tcp", NULL, AVAHI_LOOKUP_USE_MULTICAST, browse_callback, &deviceId))) {
         fprintf(stderr, "Failed to create service browser: %s\n", avahi_strerror(avahi_client_errno(client)));
         goto fail;
     }
@@ -168,5 +169,10 @@ fail:
         avahi_client_free(client);
     if (simple_poll)
         avahi_simple_poll_free(simple_poll);
-    return nullptr;
+    return;
+}
+#endif
+
+void testString(const char *){
+    
 }

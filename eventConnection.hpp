@@ -10,7 +10,7 @@
 #include <atomic>
 #include <mutex>
 #include <array>
-#include "PairingUtils.h"
+#include "PairingUtils.hpp"
 #include "client.hpp"
 
 namespace AirPlay {
