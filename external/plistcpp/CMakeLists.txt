@@ -4,7 +4,7 @@ project(PlistCpp)
 
 set(CMAKE_CXX_STANDARD 20)
 
-find_package(Boost CONFIG REQUIRED COMPONENTS system)
+find_package(Boost CONFIG REQUIRED)
 
 aux_source_directory(. SRCS)
 
