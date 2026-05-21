@@ -1,16 +1,21 @@
 #include "MFiSAP.hpp"
+#include "logger.hpp"
+#include <nlohmann/json.hpp>
 #include <array>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <curl/curl.h>
 #include <filesystem>
+#include <iomanip>
+#include <openssl/aes.h>
+#include <openssl/evp.h>
+#include <openssl/rand.h>
 #include <openssl/sha.h>
 #include <sodium/crypto_scalarmult_curve25519.h>
-#include <openssl/evp.h>
-#include <openssl/aes.h>
-#include <openssl/rand.h>
-#include "logger.hpp"
+#include <sstream>
+#include <string>
+#include <vector>
 
 struct memory {
     char *response;
@@ -79,6 +84,27 @@ MFiSAP::MFiSAP() {
 
 MFiSAP::~MFiSAP() { curl_global_cleanup(); }
 
+static bool hexStringToBytes(const std::string& hex, std::vector<uint8_t>& out)
+{
+    out.clear();
+    if (hex.size() % 2 != 0) return false;
+    out.reserve(hex.size() / 2);
+    for (size_t i = 0; i < hex.size(); i += 2) {
+        int byte = std::stoi(hex.substr(i, 2), nullptr, 16);
+        out.push_back(static_cast<uint8_t>(byte));
+    }
+    return true;
+}
+
+static std::string bytesToHexString(const std::vector<uint8_t>& data)
+{
+    std::ostringstream oss;
+    for (uint8_t b : data) {
+        oss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(b);
+    }
+    return oss.str();
+}
+
 void MFiSAP::copyCertificate(std::vector<uint8_t> &certificate) {
     const char* configPath;
     if(deviceAddress.empty()){
@@ -106,7 +132,7 @@ void MFiSAP::copyCertificate(std::vector<uint8_t> &certificate) {
 
     /* send all data to this function  */
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, cb);
- 
+
     /* we pass our 'chunk' struct to the callback function */
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *)&chunk);
 
@@ -117,12 +143,26 @@ void MFiSAP::copyCertificate(std::vector<uint8_t> &certificate) {
     /* Check for errors */
     if(res != CURLE_OK){
         LOG_ERROR("curl_easy_perform() failed: {}", curl_easy_strerror(res));
+        free(chunk.response);
+        curl_easy_cleanup(curl);
         return;
     }
 
-    certificate.resize(chunk.size);
-
-    memcpy(certificate.data(), chunk.response, chunk.size);
+    try {
+        nlohmann::json j = nlohmann::json::parse(std::string(chunk.response, chunk.size));
+        std::string dataHex = j.value("data", std::string());
+        if (!hexStringToBytes(dataHex, certificate)) {
+            LOG_ERROR("Failed to decode hex certificate data");
+            free(chunk.response);
+            curl_easy_cleanup(curl);
+            return;
+        }
+    } catch (const std::exception& e) {
+        LOG_ERROR("Failed to parse certificate JSON: {}", e.what());
+        free(chunk.response);
+        curl_easy_cleanup(curl);
+        return;
+    }
 
     free(chunk.response);
 
@@ -138,47 +178,39 @@ void MFiSAP::copyCertificate(std::vector<uint8_t> &certificate) {
 }
 
 void MFiSAP::createSignature(std::vector<uint8_t> &data, std::vector<uint8_t> &signature) {
-    struct WriteThis wt;
     struct memory chunk = {0};
- 
-    wt.readptr = (const char *)data.data();
-    wt.sizeleft = data.size();
 
     CURL * curl;
     CURLcode res;
     struct curl_slist *slist = NULL;
 
     curl = curl_easy_init();
-	
+
     LOG_DEBUG("MFi auth create signature");
- 
+
+    // Build JSON payload: { "challenge": "<40-char-hex>" }
+    nlohmann::json payload;
+    payload["challenge"] = bytesToHexString(data);
+    std::string payloadStr = payload.dump();
+
     /* Remove a header curl would otherwise add by itself */
-    slist = curl_slist_append(slist, "Content-Type: application/octet-stream");
+    slist = curl_slist_append(slist, "Content-Type: application/json");
 
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, slist);
-	
-    curl_easy_setopt(curl, CURLOPT_URL, std::format("http://{}/get-signature", deviceAddress).c_str());
-    
+
+    curl_easy_setopt(curl, CURLOPT_URL, std::format("http://{}/sign", deviceAddress).c_str());
+
     /* Now specify we want to POST data */
     curl_easy_setopt(curl, CURLOPT_POST, 1L);
- 
-    /* we want to use our own read function */
-    curl_easy_setopt(curl, CURLOPT_READFUNCTION, read_callback);
- 
-    /* pointer to pass to our read function */
-    curl_easy_setopt(curl, CURLOPT_READDATA, &wt);
- 
+
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, payloadStr.c_str());
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, (long)payloadStr.size());
+
     /* send all data to this function  */
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, cb);
- 
+
     /* we pass our 'chunk' struct to the callback function */
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *)&chunk);
-
-    /* get verbose debug output please */
-    curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
-
-    curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, (long)wt.sizeleft);
-
 
     /* Perform the request, res gets the return code */
     res = curl_easy_perform(curl);
@@ -187,12 +219,20 @@ void MFiSAP::createSignature(std::vector<uint8_t> &data, std::vector<uint8_t> &s
     /* Check for errors */
     if(res != CURLE_OK){
         LOG_ERROR("curl_easy_perform() failed: {}", curl_easy_strerror(res));
+        curl_easy_cleanup(curl);
+        curl_slist_free_all(slist);
         return;
     }
 
-    signature.resize(chunk.size);
-
-    memcpy(signature.data(), chunk.response, chunk.size);
+    try {
+        nlohmann::json j = nlohmann::json::parse(std::string(chunk.response, chunk.size));
+        std::string sigHex = j.value("signature", std::string());
+        if (!hexStringToBytes(sigHex, signature)) {
+            LOG_ERROR("Failed to decode hex signature data");
+        }
+    } catch (const std::exception& e) {
+        LOG_ERROR("Failed to parse signature JSON: {}", e.what());
+    }
 
     free(chunk.response);
     /* always cleanup */
