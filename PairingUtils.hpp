@@ -17,7 +17,6 @@
 #include <chrono>
 #include "SRP.hpp"
 #include "TLV8.hpp"
-#include <nlohmann/json_fwd.hpp>
 #include <openssl/evp.h>
 #include <openssl/ec.h>
 #include <openssl/ecdsa.h>
